@@ -1,18 +1,93 @@
-# Welcome to serverless. Read the docs
-# https://serverless.com/framework/docs/
-
-# Serverless.yml is the configuration the CLI
-# uses to deploy your code to your provider of choice
-
-# The `service` block is the name of the service
-service: serverless-scrape
+service: serverless-scraper
 
 plugins:
   - serverless-offline
 
-# The `provider` block defines where your service will be deployed
 provider:
   name: aws
   runtime: nodejs12.x
-# The `functions` block defines what code to deploy
-# functions:
+  stage: dev
+  environment:
+    STAGE: ${self:provider.stage}
+    REGION: ${self:provider.region}
+    SNS_JOBS_TOPIC_ARN: ${self:custom.jobsTopicArn}
+    CRAWLS_TABLE_NAME: ${self:custom.crawlsTableName}
+  iamRoleStatements: # Defines what other AWS services our lambda functions can access
+    - Effect: Allow # Allow access to SNS jobs topic
+      Action:
+        - sns:Publish
+      Resource:
+        - ${self:custom.jobsTopicArn}
+    - Effect: Allow # Allow access to DynamoDB tables
+      Action:
+        - dynamodb:Query
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+      Resource:
+        - ${self:custom.crawlsTableArn}
+
+custom:
+  crawlsTableName: ${self:service}-${self:provider.stage}-crawls
+  crawlsTableArn: # ARNs are addresses of deployed services in AWS space
+    Fn::Join:
+      - ":"
+      - - arn
+        - aws
+        - dynamodb
+        - Ref: AWS::Region
+        - Ref: AWS::AccountId
+        - table/${self:custom.crawlsTableName}
+  jobsTopicName: ${self:service}-${self:provider.stage}-jobs
+  jobsTopicArn:
+    Fn::Join:
+      - ""
+      - - "arn:aws:sns:"
+        - ${self:provider.region}
+        - ":"
+        - Ref: AWS::AccountId
+        - ":"
+        - ${self:custom.jobsTopicName}
+
+functions:
+  scrape:
+    handler: functions/scrape.run
+    events: # Our scrape function can handle both HTTP and SNS event types
+      - http:
+          path: scrapes
+          method: post
+          cors: true
+      - sns: ${self:custom.jobsTopicName} # Adding an SNS trigger also creates the SNS topic
+
+resources:
+  Resources: # Supporting AWS services
+    CrawlsTable: # Define a new DynamoDB Table resource to store scraping results
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.crawlsTableName}
+        ProvisionedThroughput:
+          ReadCapacityUnits: 2
+          WriteCapacityUnits: 2
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: scrapeId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+          - AttributeName: scrapeId
+            KeyType: RANGE
+
+  Outputs: # Deployment outputs for reference
+    CrawlsTableName:
+      Description: Name of the CrawlsTable
+      Value: ${self:custom.crawlsTableName}
+    CrawlsTableArn:
+      Description: ARN of the CrawlsTable
+      Value: ${self:custom.crawlsTableArn}
+    JobsTopicName:
+      Description: Name of the SNS jobs topic
+      Value: ${self:custom.jobsTopicName}
+    JobsTopicArn:
+      Description: ARN of the SNS jobs topic
+      Value: ${self:custom.jobsTopicArn}

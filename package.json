@@ -16,7 +16,11 @@
     "collectCoverage": true
   },
   "dependencies": {
+    "@serverless-chrome/lambda": "^1.0.0-55",
     "aws-sdk": "^2.131.0",
-    "lodash": "^4.17.4"
+    "chrome-remote-interface": "^0.28.2",
+    "lodash": "^4.17.4",
+    "scrape-it": "^5.2.4",
+    "uuid": "^8.3.0"
   }
 }
